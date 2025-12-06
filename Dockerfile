@@ -6,9 +6,10 @@ LABEL description="WireGuard VPN + Nginx Reverse Proxy for PostgreSQL"
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install required packages from Ubuntu repositories
+# Using nginx-extras to ensure stream module is available
 RUN apt-get update && \
     apt-get install -y \
-    nginx \
+    nginx-extras \
     wireguard \
     wireguard-tools \
     iptables \

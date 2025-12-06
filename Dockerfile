@@ -5,13 +5,8 @@ LABEL description="WireGuard VPN + Nginx Reverse Proxy for PostgreSQL"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Enable universe and multiverse repositories, add WireGuard PPA
+# Install required packages from Ubuntu repositories
 RUN apt-get update && \
-    apt-get install -y software-properties-common && \
-    add-apt-repository universe && \
-    add-apt-repository multiverse && \
-    add-apt-repository ppa:wireguard/wireguard && \
-    apt-get update && \
     apt-get install -y \
     nginx \
     wireguard \
@@ -20,7 +15,7 @@ RUN apt-get update && \
     iproute2 \
     postgresql-client \
     gettext-base \
-    resolvconf \
+    openresolv \
     curl \
     gnupg2 \
     ca-certificates \

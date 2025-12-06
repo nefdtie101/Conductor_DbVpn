@@ -74,18 +74,6 @@ data:
     }
 
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: db-vpn-secrets
-  namespace: db-vpn
-type: Opaque
-stringData:
-  # REPLACE WITH YOUR POSTGRES CONNECTION STRING
-  # Example: postgresql://user:password@postgres.default.svc.cluster.local:5432/dbname
-  postgres-connection-string: "YOUR_POSTGRES_CONNECTION_STRING_HERE"
-
----
 # =============================================================================
 # SERVICE CONFIGURATION
 # =============================================================================
@@ -143,12 +131,6 @@ spec:
             add:
               - NET_ADMIN
           privileged: false
-        env:
-          - name: POSTGRES_CONNECTION_STRING
-            valueFrom:
-              secretKeyRef:
-                name: db-vpn-secrets
-                key: postgres-connection-string
         ports:
           - containerPort: 5432
             protocol: TCP
@@ -188,4 +170,3 @@ spec:
         - name: nginx-config
           configMap:
             name: nginx-config
-

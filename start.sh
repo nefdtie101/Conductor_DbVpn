@@ -46,15 +46,84 @@ echo "  Listen on:    0.0.0.0:${LISTEN_PORT}"
 echo "  Forward to:   ${POSTGRES_HOST}:${POSTGRES_PORT}"
 echo ""
 
-# Test DNS resolution
-echo "Testing DNS resolution..."
+# DNS Debugging
+echo "================================================"
+echo "DNS Configuration Debugging"
+echo "================================================"
+echo "Environment Variables:"
+echo "  POSTGRES_HOST: ${POSTGRES_HOST}"
+echo "  POSTGRES_PORT: ${POSTGRES_PORT}"
+echo ""
+
+echo "DNS resolvers (/etc/resolv.conf):"
+cat /etc/resolv.conf | grep -v "^#" | grep -v "^$"
+echo ""
+
+# Check DNS search domains
+if grep -q "^search" /etc/resolv.conf; then
+    echo "DNS Search domains:"
+    grep "^search" /etc/resolv.conf
+    echo ""
+else
+    echo "⚠️  No DNS search domains configured in /etc/resolv.conf"
+    echo ""
+fi
+
+echo "Testing DNS resolution methods:"
+echo ""
+
+# Method 1: nslookup
+echo "1. nslookup test:"
+if command -v nslookup > /dev/null 2>&1; then
+    nslookup "${POSTGRES_HOST}" || echo "   ⚠️  nslookup failed"
+else
+    echo "   nslookup not available"
+fi
+echo ""
+
+# Method 2: dig
+echo "2. dig test:"
+if command -v dig > /dev/null 2>&1; then
+    dig "${POSTGRES_HOST}" +short || echo "   ⚠️  dig failed"
+else
+    echo "   dig not available"
+fi
+echo ""
+
+# Method 3: host command
+echo "3. host test:"
+if command -v host > /dev/null 2>&1; then
+    host "${POSTGRES_HOST}" || echo "   ⚠️  host command failed"
+else
+    echo "   host not available"
+fi
+echo ""
+
+# Method 4: getent
+echo "4. getent hosts test:"
 if getent hosts "${POSTGRES_HOST}" > /dev/null 2>&1; then
     RESOLVED_IP=$(getent hosts "${POSTGRES_HOST}" | awk '{ print $1 }')
-    echo "✅ DNS resolved: ${POSTGRES_HOST} -> ${RESOLVED_IP}"
+    echo "   ✅ DNS resolved: ${POSTGRES_HOST} -> ${RESOLVED_IP}"
 else
-    echo "⚠️  Warning: Could not resolve ${POSTGRES_HOST}"
-    echo "   Continuing anyway (socat will retry)..."
+    echo "   ⚠️  Warning: Could not resolve ${POSTGRES_HOST}"
+    echo "   This might cause connection issues!"
 fi
+echo ""
+
+# Method 5: Try without .svc.cluster.local suffix
+SHORT_HOST=$(echo "${POSTGRES_HOST}" | sed 's/.svc.cluster.local$//')
+echo "5. Testing short hostname: ${SHORT_HOST}"
+if getent hosts "${SHORT_HOST}" > /dev/null 2>&1; then
+    RESOLVED_IP=$(getent hosts "${SHORT_HOST}" | awk '{ print $1 }')
+    echo "   ✅ Short DNS resolved: ${SHORT_HOST} -> ${RESOLVED_IP}"
+    echo "   💡 Using short hostname for connection"
+    POSTGRES_HOST="${SHORT_HOST}"
+else
+    echo "   ⚠️  Short hostname also failed"
+fi
+echo ""
+
+echo "================================================"
 echo ""
 
 # Function to handle shutdown
@@ -71,6 +140,9 @@ trap shutdown SIGTERM SIGINT
 echo "================================================"
 echo "✅ Starting PostgreSQL TCP Proxy (socat)..."
 echo "================================================"
+echo "Final connection parameters:"
+echo "  Target: ${POSTGRES_HOST}:${POSTGRES_PORT}"
+echo "  Listen: 0.0.0.0:${LISTEN_PORT}"
 echo ""
 
 # Start socat TCP proxy in foreground

@@ -18,6 +18,8 @@ RUN apt-get update && \
     curl \
     net-tools \
     dnsutils \
+    iputils-ping \
+    bind9-host \
     && rm -rf /var/lib/apt/lists/*
 
 # Create necessary directories

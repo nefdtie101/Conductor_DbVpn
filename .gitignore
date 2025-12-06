@@ -1,0 +1,38 @@
+# WireGuard keys - NEVER COMMIT THESE
+*.key
+server_private.key
+server_public.key
+client_private.key
+client_public.key
+*_private.key
+*_public.key
+
+# Configured deployment file with secrets
+deployment.configured.yaml
+deployment-secrets.yaml
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+

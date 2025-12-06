@@ -1,0 +1,191 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: db-vpn
+
+---
+# =============================================================================
+# CONFIGURATION SECTION - UPDATE THESE VALUES FOR YOUR DEPLOYMENT
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wireguard-config
+  namespace: db-vpn
+data:
+  wg0.conf: |
+    [Interface]
+    # This pod's VPN address (assigned by WireGuard server)
+    Address = YOUR_CLIENT_VPN_ADDRESS
+    # REPLACE WITH YOUR CLIENT PRIVATE KEY (generate with: wg genkey)
+    PrivateKey = YOUR_CLIENT_PRIVATE_KEY_HERE
+    # Optional: DNS servers to use through VPN
+    # DNS = 1.1.1.1, 8.8.8.8
+
+    [Peer]
+    # REPLACE WITH YOUR WIREGUARD SERVER'S PUBLIC KEY
+    PublicKey = YOUR_WIREGUARD_SERVER_PUBLIC_KEY_HERE
+    # REPLACE WITH YOUR WIREGUARD SERVER'S ENDPOINT (IP:PORT)
+    Endpoint = YOUR_WIREGUARD_SERVER_IP:51820
+    # Networks accessible through VPN (use 0.0.0.0/0 for all traffic or specific subnets)
+    AllowedIPs = YOUR_ALLOWED_IPS
+    # Keep connection alive through NAT
+    PersistentKeepalive = 25
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: db-vpn
+data:
+  nginx.conf: |
+    events {
+        worker_connections 1024;
+    }
+
+    stream {
+        upstream postgres {
+            # REPLACE WITH YOUR POSTGRES HOST/IP ACCESSIBLE THROUGH VPN
+            # This should be the PostgreSQL server IP/hostname that's accessible via the WireGuard tunnel
+            # Example: 10.8.0.5:5432 (if PostgreSQL is at 10.8.0.5 on the VPN)
+            # Example: db.internal:5432 (if using DNS through VPN)
+            server YOUR_POSTGRES_VPN_HOST:YOUR_POSTGRES_PORT;
+        }
+
+        server {
+            listen 5432;
+            proxy_pass postgres;
+            proxy_connect_timeout 10s;
+            proxy_timeout 300s;
+            proxy_buffer_size 16k;
+        }
+    }
+
+    http {
+        server {
+            listen 8080;
+            location /health {
+                access_log off;
+                return 200 "healthy\n";
+                add_header Content-Type text/plain;
+            }
+        }
+    }
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-vpn-secrets
+  namespace: db-vpn
+type: Opaque
+stringData:
+  # REPLACE WITH YOUR POSTGRES CONNECTION STRING
+  # Example: postgresql://user:password@postgres.default.svc.cluster.local:5432/dbname
+  postgres-connection-string: "YOUR_POSTGRES_CONNECTION_STRING_HERE"
+
+---
+# =============================================================================
+# SERVICE CONFIGURATION
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-vpn-service
+  namespace: db-vpn
+spec:
+  # Change to NodePort or keep as ClusterIP since we're not exposing WireGuard
+  type: ClusterIP
+  selector:
+    app: db-vpn
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+    - name: health
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+
+---
+# =============================================================================
+# DEPLOYMENT CONFIGURATION
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db-vpn
+  namespace: db-vpn
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db-vpn
+  template:
+    metadata:
+      labels:
+        app: db-vpn
+    spec:
+      # Use pod network (NOT host network) - won't interfere with cluster networking
+      hostNetwork: false
+      dnsPolicy: ClusterFirst
+      containers:
+      - name: db-vpn
+        # REPLACE WITH YOUR DOCKER IMAGE
+        # Format: registry/image:tag
+        # Example: ghcr.io/username/db-vpn:latest
+        image: YOUR_DOCKER_IMAGE_HERE
+        imagePullPolicy: Always
+        securityContext:
+          capabilities:
+            add:
+              - NET_ADMIN
+          privileged: false
+        env:
+          - name: POSTGRES_CONNECTION_STRING
+            valueFrom:
+              secretKeyRef:
+                name: db-vpn-secrets
+                key: postgres-connection-string
+        ports:
+          - containerPort: 5432
+            protocol: TCP
+            name: postgres
+          - containerPort: 8080
+            protocol: TCP
+            name: health
+        volumeMounts:
+          - name: wireguard-config
+            mountPath: /etc/wireguard
+          - name: nginx-config
+            mountPath: /etc/nginx/nginx.conf
+            subPath: nginx.conf
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+        - name: wireguard-config
+          configMap:
+            name: wireguard-config
+        - name: nginx-config
+          configMap:
+            name: nginx-config
+

@@ -16,11 +16,7 @@ fi
 cp /etc/wireguard/wg0.conf /tmp/wg0.conf
 chmod 600 /tmp/wg0.conf
 
-# Test nginx configuration
-echo "Testing Nginx configuration..."
-nginx -t
-
-# Start WireGuard client using the copied config
+# Start WireGuard client FIRST (before nginx test)
 echo "Connecting to WireGuard server..."
 wg-quick up /tmp/wg0.conf
 
@@ -29,6 +25,13 @@ echo ""
 echo "WireGuard connection status:"
 wg show
 echo ""
+
+# Wait a moment for VPN to stabilize
+sleep 2
+
+# Test nginx configuration (after VPN is up)
+echo "Testing Nginx configuration..."
+nginx -t
 
 # Start nginx in background
 echo "Starting Nginx reverse proxy..."

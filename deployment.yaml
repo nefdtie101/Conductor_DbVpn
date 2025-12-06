@@ -40,19 +40,22 @@ metadata:
   namespace: db-vpn
 data:
   nginx.conf: |
+    # Load stream module (required for TCP/UDP proxying)
+    load_module /usr/lib/nginx/modules/ngx_stream_module.so;
+
     events {
         worker_connections 1024;
     }
 
     stream {
+        # PostgreSQL upstream - Kubernetes service inside cluster
         upstream postgres {
-            # REPLACE WITH YOUR POSTGRES HOST/IP ACCESSIBLE THROUGH VPN
-            # This should be the PostgreSQL server IP/hostname that's accessible via the WireGuard tunnel
-            # Example: 10.8.0.5:5432 (if PostgreSQL is at 10.8.0.5 on the VPN)
-            # Example: db.internal:5432 (if using DNS through VPN)
-            server YOUR_POSTGRES_VPN_HOST:YOUR_POSTGRES_PORT;
+            server oneag-postgress.oneag-postgress:5432;
         }
 
+        # PostgreSQL reverse proxy
+        # VPN clients connect to this pod's VPN IP (192.168.10.7:5432)
+        # and get proxied to the Kubernetes PostgreSQL service
         server {
             listen 5432;
             proxy_pass postgres;
@@ -68,6 +71,11 @@ data:
             location /health {
                 access_log off;
                 return 200 "healthy\n";
+                add_header Content-Type text/plain;
+            }
+            location /status {
+                access_log off;
+                return 200 "DB VPN is running\n";
                 add_header Content-Type text/plain;
             }
         }

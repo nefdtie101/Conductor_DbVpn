@@ -32,54 +32,6 @@ data:
     # Keep connection alive through NAT
     PersistentKeepalive = 25
 
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: nginx-config
-  namespace: db-vpn
-data:
-  nginx.conf: |
-    # Load stream module (required for TCP/UDP proxying)
-    load_module /usr/lib/nginx/modules/ngx_stream_module.so;
-
-    events {
-        worker_connections 1024;
-    }
-
-    stream {
-        # PostgreSQL upstream - Kubernetes service inside cluster
-        upstream postgres {
-            server oneag-postgress.oneag-postgress.svc.cluster.local:5432;
-        }
-
-        # PostgreSQL reverse proxy
-        # VPN clients connect to this pod's VPN IP (192.168.10.7:5432)
-        # and get proxied to the Kubernetes PostgreSQL service
-        server {
-            listen 5432;
-            proxy_pass postgres;
-            proxy_connect_timeout 10s;
-            proxy_timeout 300s;
-            proxy_buffer_size 16k;
-        }
-    }
-
-    http {
-        server {
-            listen 8080;
-            location /health {
-                access_log off;
-                return 200 "healthy\n";
-                add_header Content-Type text/plain;
-            }
-            location /status {
-                access_log off;
-                return 200 "DB VPN is running\n";
-                add_header Content-Type text/plain;
-            }
-        }
-    }
 
 ---
 # =============================================================================
@@ -99,10 +51,6 @@ spec:
     - name: postgres
       port: 5432
       targetPort: 5432
-      protocol: TCP
-    - name: health
-      port: 8080
-      targetPort: 8080
       protocol: TCP
 
 ---
@@ -143,27 +91,17 @@ spec:
           - containerPort: 5432
             protocol: TCP
             name: postgres
-          - containerPort: 8080
-            protocol: TCP
-            name: health
+        env:
+          # Configure PostgreSQL endpoint here - no need to rebuild image!
+          - name: POSTGRES_HOST
+            value: "oneag-postgress.oneag-postgress.svc.cluster.local"
+          - name: POSTGRES_PORT
+            value: "5432"
+          - name: LISTEN_PORT
+            value: "5432"
         volumeMounts:
           - name: wireguard-config
             mountPath: /etc/wireguard
-          - name: nginx-config
-            mountPath: /etc/nginx/nginx.conf
-            subPath: nginx.conf
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 10
-          periodSeconds: 30
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 10
         resources:
           requests:
             memory: "128Mi"
@@ -175,6 +113,3 @@ spec:
         - name: wireguard-config
           configMap:
             name: wireguard-config
-        - name: nginx-config
-          configMap:
-            name: nginx-config

@@ -3,7 +3,7 @@
 set -e
 
 echo "================================================"
-echo "Starting DB VPN Container (WireGuard Client)"
+echo "Starting DB VPN Container (WireGuard + socat)"
 echo "================================================"
 
 # Verify WireGuard config exists
@@ -16,7 +16,7 @@ fi
 cp /etc/wireguard/wg0.conf /tmp/wg0.conf
 chmod 600 /tmp/wg0.conf
 
-# Start WireGuard client FIRST (before nginx test)
+# Start WireGuard client
 echo "Connecting to WireGuard server..."
 wg-quick up /tmp/wg0.conf
 
@@ -26,53 +26,42 @@ echo "WireGuard connection status:"
 wg show
 echo ""
 
-# Wait a moment for VPN to stabilize
-sleep 2
-
-# Test nginx configuration (after VPN is up)
-echo "Testing Nginx configuration..."
-RETRY_COUNT=0
-MAX_RETRIES=5
-until nginx -t || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
-    echo "Nginx config test failed, retrying in 2 seconds... (Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
-    sleep 2
-    RETRY_COUNT=$((RETRY_COUNT + 1))
-done
-
-if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-    echo "ERROR: Nginx configuration test failed after $MAX_RETRIES attempts"
-    echo "Checking DNS resolution..."
-    getent hosts oneag-postgress.oneag-postgress.svc.cluster.local || echo "DNS resolution failed"
-    exit 1
-fi
-
-echo "Nginx configuration test successful!"
-
-# Show network interfaces and IPs
-echo ""
+# Show network interfaces and VPN IP
 echo "Network interfaces:"
-ip addr show
+ip addr show | grep -E "inet|wg0" || ip addr show
 echo ""
 
-# Start nginx in background
-echo "Starting Nginx reverse proxy..."
-nginx -g 'daemon off;' &
-NGINX_PID=$!
+# Wait for VPN to stabilize
+echo "Waiting for VPN to stabilize..."
+sleep 3
 
-# Wait a moment for nginx to start
-sleep 2
+# PostgreSQL endpoint configuration
+# YOU CAN CHANGE THIS TO YOUR POSTGRESQL SERVICE
+POSTGRES_HOST="${POSTGRES_HOST:-oneag-postgress.oneag-postgress.svc.cluster.local}"
+POSTGRES_PORT="${POSTGRES_PORT:-5432}"
+LISTEN_PORT="${LISTEN_PORT:-5432}"
 
-# Check if nginx is actually listening
-echo "Checking listening ports..."
-netstat -tlnp 2>/dev/null | grep :5432 || ss -tlnp 2>/dev/null | grep :5432 || echo "Warning: Port 5432 not showing in netstat/ss"
-netstat -tlnp 2>/dev/null | grep :8080 || ss -tlnp 2>/dev/null | grep :8080 || echo "Warning: Port 8080 not showing in netstat/ss"
+echo "PostgreSQL Proxy Configuration:"
+echo "  Listen on:    0.0.0.0:${LISTEN_PORT}"
+echo "  Forward to:   ${POSTGRES_HOST}:${POSTGRES_PORT}"
+echo ""
+
+# Test DNS resolution
+echo "Testing DNS resolution..."
+if getent hosts "${POSTGRES_HOST}" > /dev/null 2>&1; then
+    RESOLVED_IP=$(getent hosts "${POSTGRES_HOST}" | awk '{ print $1 }')
+    echo "✅ DNS resolved: ${POSTGRES_HOST} -> ${RESOLVED_IP}"
+else
+    echo "⚠️  Warning: Could not resolve ${POSTGRES_HOST}"
+    echo "   Continuing anyway (socat will retry)..."
+fi
 echo ""
 
 # Function to handle shutdown
 shutdown() {
     echo ""
     echo "Shutting down gracefully..."
-    nginx -s quit 2>/dev/null || true
+    pkill socat 2>/dev/null || true
     wg-quick down /tmp/wg0.conf 2>/dev/null || true
     exit 0
 }
@@ -80,13 +69,13 @@ shutdown() {
 trap shutdown SIGTERM SIGINT
 
 echo "================================================"
-echo "✅ DB VPN Client is ready!"
-echo "================================================"
-echo "  WireGuard:      connected as VPN client"
-echo "  PostgreSQL:     proxying on port 5432/TCP"
-echo "  Health check:   available on port 8080/TCP"
+echo "✅ Starting PostgreSQL TCP Proxy (socat)..."
 echo "================================================"
 echo ""
 
-# Keep container running and wait for nginx
-wait $NGINX_PID
+# Start socat TCP proxy in foreground
+# fork = handle multiple connections
+# reuseaddr = allow quick restart
+exec socat -d -d \
+    TCP-LISTEN:${LISTEN_PORT},fork,reuseaddr \
+    TCP:${POSTGRES_HOST}:${POSTGRES_PORT}

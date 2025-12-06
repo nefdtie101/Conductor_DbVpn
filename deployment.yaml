@@ -3,6 +3,7 @@ kind: Namespace
 metadata:
   name: db-vpn
 
+
 ---
 # =============================================================================
 # CONFIGURATION SECTION - UPDATE THESE VALUES FOR YOUR DEPLOYMENT

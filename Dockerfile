@@ -5,7 +5,7 @@ LABEL description="WireGuard VPN + Nginx Reverse Proxy for PostgreSQL"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install required packages from official Nginx repo
+# Add official Nginx repository and install required packages
 RUN apt-get update && \
     apt-get install -y curl gnupg2 ca-certificates lsb-release && \
     echo "deb http://nginx.org/packages/ubuntu $(lsb_release -cs) nginx" \
@@ -29,6 +29,8 @@ RUN mkdir -p /etc/wireguard /var/log/nginx /run
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
 
 # PostgreSQL proxy and Health check (WireGuard client doesn't expose ports)
 EXPOSE 5432 8080

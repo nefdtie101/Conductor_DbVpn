@@ -21,6 +21,8 @@ RUN apt-get update && \
     gnupg2 \
     ca-certificates \
     lsb-release \
+    net-tools \
+    dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
 # Create necessary directories

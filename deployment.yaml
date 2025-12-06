@@ -50,7 +50,7 @@ data:
     stream {
         # PostgreSQL upstream - Kubernetes service inside cluster
         upstream postgres {
-            server oneag-postgress.oneag-postgress:5432;
+            server oneag-postgress.oneag-postgress.svc.cluster.local:5432;
         }
 
         # PostgreSQL reverse proxy

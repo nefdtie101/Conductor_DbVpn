@@ -31,12 +31,42 @@ sleep 2
 
 # Test nginx configuration (after VPN is up)
 echo "Testing Nginx configuration..."
-nginx -t
+RETRY_COUNT=0
+MAX_RETRIES=5
+until nginx -t || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
+    echo "Nginx config test failed, retrying in 2 seconds... (Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
+    sleep 2
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+done
+
+if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+    echo "ERROR: Nginx configuration test failed after $MAX_RETRIES attempts"
+    echo "Checking DNS resolution..."
+    getent hosts oneag-postgress.oneag-postgress.svc.cluster.local || echo "DNS resolution failed"
+    exit 1
+fi
+
+echo "Nginx configuration test successful!"
+
+# Show network interfaces and IPs
+echo ""
+echo "Network interfaces:"
+ip addr show
+echo ""
 
 # Start nginx in background
 echo "Starting Nginx reverse proxy..."
 nginx -g 'daemon off;' &
 NGINX_PID=$!
+
+# Wait a moment for nginx to start
+sleep 2
+
+# Check if nginx is actually listening
+echo "Checking listening ports..."
+netstat -tlnp 2>/dev/null | grep :5432 || ss -tlnp 2>/dev/null | grep :5432 || echo "Warning: Port 5432 not showing in netstat/ss"
+netstat -tlnp 2>/dev/null | grep :8080 || ss -tlnp 2>/dev/null | grep :8080 || echo "Warning: Port 8080 not showing in netstat/ss"
+echo ""
 
 # Function to handle shutdown
 shutdown() {

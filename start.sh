@@ -12,16 +12,17 @@ if [ ! -f /etc/wireguard/wg0.conf ]; then
     exit 1
 fi
 
-# Set proper permissions
-chmod 600 /etc/wireguard/wg0.conf
+# Copy config to writable location and set permissions
+cp /etc/wireguard/wg0.conf /tmp/wg0.conf
+chmod 600 /tmp/wg0.conf
 
 # Test nginx configuration
 echo "Testing Nginx configuration..."
 nginx -t
 
-# Start WireGuard client
+# Start WireGuard client using the copied config
 echo "Connecting to WireGuard server..."
-wg-quick up wg0
+wg-quick up /tmp/wg0.conf
 
 # Show WireGuard status
 echo ""
@@ -39,7 +40,7 @@ shutdown() {
     echo ""
     echo "Shutting down gracefully..."
     nginx -s quit 2>/dev/null || true
-    wg-quick down wg0 2>/dev/null || true
+    wg-quick down /tmp/wg0.conf 2>/dev/null || true
     exit 0
 }
 

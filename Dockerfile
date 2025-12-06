@@ -19,6 +19,7 @@ RUN apt-get update && \
     iproute2 \
     postgresql-client \
     gettext-base \
+    resolvconf \
     && rm -rf /var/lib/apt/lists/*
 
 # Create necessary directories

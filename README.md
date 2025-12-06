@@ -15,24 +15,36 @@ Securely expose a PostgreSQL database (or any TCP service) inside your Kubernete
 This solution runs a WireGuard client inside a Kubernetes pod, connecting to an external WireGuard VPN server. Nginx reverse proxies PostgreSQL traffic from the cluster to any client on the VPN.
 
 ```
-External WireGuard Server (outside cluster)
-    ↑ VPN Tunnel
-WireGuard Client (in Kubernetes pod)
-    ↓
-Nginx Reverse Proxy (port 5432)
-    ↓
-PostgreSQL Database (internal cluster)
-
-VPN Clients
-    ↓
-Connect to: <pod's VPN IP>:5432
-    ↓
-Forwarded to: <internal DB DNS/hostname>:5432
+┌─────────────────────────────────────────────────────────────┐
+│  External Network (Outside Kubernetes)                      │
+│                                                             │
+│  ┌──────────────────┐         ┌──────────────────┐          │
+│  │  WireGuard       │         │  WireGuard       │          │
+│  │  Server          │◄───────►│  Client          │          │
+│  │  (VPN Gateway)   │         │  (e.g., laptop)  │          │
+│  └────────┬─────────┘         └────────┬─────────┘          │
+│           │ VPN Tunnel (WireGuard)              │           │
+└───────────┼──────────────────────────────────────┘           │
+            │                                                  │
+┌───────────┼──────────────────────────────────────────────────┐
+│  Kubernetes Cluster                                         │
+│           │                                                │
+│  ┌────────▼────────────────────────────────────────────┐    │
+│  │  db-vpn Pod (Namespace: db-vpn)                     │    │
+│  │  WireGuard Client (10.8.0.2)                        │    │
+│  │  Nginx Reverse Proxy (:5432)                        │    │
+│  └─────────┬───────────────────────────────────────────┘    │
+│            │                                                │
+│  ┌─────────▼───────────────────────────────────────────┐    │
+│  │  PostgreSQL Database (internal cluster, e.g. 10.8.0.5) │
+│  └─────────────────────────────────────────────────────┘    │
+└────────────────────────────────────────────────────────────┘
 ```
 
-- The WireGuard client connects out to your VPN server (not hosted in the cluster).
-- Nginx proxies PostgreSQL traffic from the cluster to the VPN.
-- Any client on the VPN can connect to the pod's VPN IP:5432 to reach the database.
+**Flow:**
+- External WireGuard client connects to VPN server.
+- External client can reach db-vpn pod at VPN IP (e.g., 10.8.0.2:5432).
+- Nginx in pod forwards traffic to internal PostgreSQL DB.
 
 ## Prerequisites
 
@@ -97,44 +109,6 @@ psql -h <pod's VPN IP> -p 5432 -U your_user -d your_database
 
 - The pod's VPN IP is the address assigned in the WireGuard config (e.g., 10.8.0.2).
 - Nginx will forward traffic to the internal database DNS/hostname and port.
-
-## Architecture Details
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  External Network (Outside Kubernetes)                  │
-│                                                        │
-│  ┌──────────────────┐         ┌──────────────────┐     │
-│  │  WireGuard       │         │  VPN Client      │     │
-│  │  Server          │◄────────┤  (your laptop)   │     │
-│  │  (VPN Gateway)   │         └──────────────────┘     │
-│  └────────┬─────────┘                                   │
-│           │                                            │
-└───────────┼────────────────────────────────────────────┘
-            │ VPN Tunnel (WireGuard)
-            │
-┌───────────┼────────────────────────────────────────────┐
-│  Kubernetes Cluster                                   │
-│           │                                           │
-│  ┌────────▼──────────────────────────────────────┐    │
-│  │  db-vpn Pod (WireGuard client)                │    │
-│  │  VPN IP: 10.8.0.2                            │    │
-│  │  Nginx TCP Proxy (listen 0.0.0.0:5432)       │    │
-│  │  Forwards to: postgres.default.svc:5432      │    │
-│  └───────────────────────────────────────────────┘    │
-│                                                      │
-│  ┌───────────────────────────────────────────────┐    │
-│  │  PostgreSQL Database (internal cluster)       │    │
-│  └───────────────────────────────────────────────┘    │
-└───────────────────────────────────────────────────────┘
-```
-
-**Flow:**
-1. WireGuard client in pod connects to external VPN server
-2. Pod receives VPN IP (e.g., 10.8.0.2)
-3. Nginx listens on 0.0.0.0:5432 (VPN IP included)
-4. VPN clients connect to 10.8.0.2:5432
-5. Nginx forwards traffic to internal DB DNS/hostname:5432
 
 ## Configuration Files
 
